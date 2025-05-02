@@ -1,0 +1,42 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Plan: Yad2 Apartment Notifier
+
+## Phases
+
+1.  **Phase 1: Planning (Current)**
+    *   Define requirements.
+    *   Outline architecture.
+    *   Break down into tasks.
+    *   Setup planning documents (`architecture.mdc`, `plans.mdc`, `tasks.mdc`).
+
+2.  **Phase 2: Core Implementation**
+    *   Setup basic project structure (folders, initial files, `requirements.txt`, `.gitignore`).
+    *   Implement Fetcher module.
+    *   Implement Parser module.
+    *   Implement basic Notifier module.
+    *   Implement Configuration handling.
+    *   Implement Main script logic to integrate components.
+
+3.  **Phase 3: Feature Enhancement & Refinement**
+    *   (Optional) Implement State Management for duplicate prevention.
+    *   Refine Telegram message formatting.
+    *   Add robust error handling and logging.
+    *   Write unit/integration tests.
+
+4.  **Phase 4: Documentation & Finalization**
+    *   Write README.md with setup and usage instructions.
+    *   Code cleanup and final review.
+
+## Timeline
+
+*   (To be determined - depends on implementation complexity and iterations)
+
+## Resources
+
+*   Yad2 API Endpoint: `https://gw.yad2.co.il/recommendations/items/realestate?...` (Specific params as needed)
+*   Telegram Bot API documentation.
+*   Python `requests`, `python-telegram-bot`, `python-dotenv` libraries.

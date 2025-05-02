@@ -1,0 +1,75 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Architecture Plan
+
+This document outlines the high-level architecture for the Yad2 Apartment Notifier script.
+
+## Components
+
+1.  **Fetcher (`fetcher.py`)**:
+    *   Responsibility: Makes HTTP GET requests to the specified Yad2 API endpoint.
+    *   Handles network errors and non-successful HTTP status codes.
+    *   Input: Yad2 API URL.
+    *   Output: Raw JSON response string or raises an error.
+
+2.  **Parser (`parser.py`)**:
+    *   Responsibility: Parses the JSON response from the Fetcher.
+    *   Extracts relevant fields for each apartment listing (e.g., price, address, rooms, sq meters, description, update date, image URL, listing URL).
+    *   Handles JSON parsing errors and missing keys gracefully.
+    *   Input: Raw JSON string.
+    *   Output: A list of structured data objects (e.g., dictionaries or dataclasses), each representing an apartment listing.
+
+3.  **Notifier (`notifier.py`)**:
+    *   Responsibility: Sends formatted messages to a specified Telegram chat.
+    *   Uses the Telegram Bot API.
+    *   Requires Telegram Bot Token and Chat ID for configuration.
+    *   Handles potential API errors during sending.
+    *   Input: A structured data object representing a single listing, Bot Token, Chat ID.
+    *   Output: None (or status of the send operation).
+
+4.  **Configuration (`config.py` / Environment Variables)**:
+    *   Responsibility: Manages configuration settings.
+    *   Stores/Provides: Yad2 URL, Telegram Bot Token, Telegram Chat ID, (Optional) path to state file.
+    *   Recommended approach: Use environment variables (`.env` file) for sensitive data like API tokens.
+
+5.  **State Manager (`state.py` / Optional)**:
+    *   Responsibility: Tracks which listings have already been sent to avoid duplicates.
+    *   Stores the unique identifier (e.g., `adNumber` or `token`) of sent listings.
+    *   Persistence: Could use a simple file (JSON, text) or a lightweight database.
+    *   Input: Listing identifier.
+    *   Output: Boolean (whether the listing is new). Updates internal state.
+
+6.  **Main Script (`main.py`)**:
+    *   Responsibility: Orchestrates the workflow.
+    *   Loads configuration.
+    *   Calls the Fetcher.
+    *   Calls the Parser.
+    *   (Optional) Filters listings using the State Manager.
+    *   Iterates through new/parsed listings.
+    *   Calls the Notifier for each new listing.
+    *   Includes basic logging.
+
+## Data Flow
+
+```mermaid
+graph LR
+    A[main.py] -- URL --> B(Fetcher);
+    B -- Raw JSON --> A;
+    A -- Raw JSON --> C(Parser);
+    C -- Parsed Listings --> A;
+    A -- Listing ID --> D{State Manager?};
+    D -- Is New? --> A;
+    A -- Formatted Listing & Config --> E(Notifier);
+    E -- Sends Message --> F((Telegram API));
+    G[config/.env] --> A;
+    G --> E;
+```
+
+## Key Decisions
+
+*   **Language**: Python 3
+*   **Libraries**: `requests` (fetching), `python-telegram-bot` (Telegram), `python-dotenv` (config).
+*   **State Management**: Start with a simple JSON file for persistence if implementing duplicate prevention.

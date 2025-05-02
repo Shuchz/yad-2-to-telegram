@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Global Rules
+
+- (Placeholder for any project-wide rules or conventions)

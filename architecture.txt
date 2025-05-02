@@ -1,0 +1,86 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Architecture Plan
+
+This document outlines the high-level architecture for the Yad2 Apartment Notifier script.
+
+## Components
+
+1.  **Fetcher (`fetcher.py`)**:
+    *   Responsibility: Makes HTTP GET requests to the specified Yad2 API endpoint.
+    *   Handles network errors and non-successful HTTP status codes.
+    *   Input: Yad2 API URL.
+    *   Output: Raw JSON response string or raises an error.
+
+2.  **Data Transfer Objects (`dto.py`)**:
+    *   Responsibility: Defines data structures (`ApartmentDTO`, `AddressDTO`) and includes logic to parse raw API data into these structures (`from_api_data` method).
+    *   Ensures consistent data format. Includes helper functions for safe data extraction and type conversion (e.g., dates).
+    *   Input: Raw dictionary data from a single API listing item (for parsing method).
+    *   Output: Class definitions and `ApartmentDTO` instances.
+
+3.  **Parser (`parser.py`)**:
+    *   Responsibility: Iterates through the list of raw listing data from the Fetcher's JSON response.
+    *   Calls the parsing method within `ApartmentDTO` (e.g., `ApartmentDTO.from_api_data()`) for each item.
+    *   Handles errors related to the overall list structure or during iteration.
+    *   Filters out any items that fail parsing (e.g., return None from `from_api_data`).
+    *   Input: Raw JSON string (containing the list of listings).
+    *   Output: A `List[ApartmentDTO]`.
+
+4.  **Notifier (`notifier.py`)**:
+    *   Responsibility: Accepts an `ApartmentDTO` and sends a formatted message to Telegram.
+    *   Uses the `python-telegram-bot` library.
+    *   Requires Telegram Bot Token and Chat ID configuration.
+    *   Formats information from the `ApartmentDTO` (potentially using a method like `dto.to_telegram_message()` or custom logic).
+    *   Handles potential Telegram API errors.
+    *   Input: An `ApartmentDTO` object, Bot Token, Chat ID.
+    *   Output: None (or status of the send operation).
+
+5.  **Configuration (`config.py` / Environment Variables)**:
+    *   Responsibility: Manages configuration settings.
+    *   Stores/Provides: Yad2 URL, Telegram Bot Token, Telegram Chat ID, (Optional) path to state file.
+    *   Recommended approach: Use environment variables (`.env` file) for sensitive data like API tokens.
+
+6.  **State Manager (`state.py` / Optional)**:
+    *   Responsibility: Tracks which listings (by ID from `ApartmentDTO`) have already been sent.
+    *   Stores the unique identifier (`id` field of `ApartmentDTO`).
+    *   Persistence: Could use a simple file (JSON, text).
+    *   Input: Listing ID (`str`).
+    *   Output: Boolean (whether the listing is new). Updates internal state.
+
+7.  **Main Script (`main.py`)**:
+    *   Responsibility: Orchestrates the workflow.
+    *   Loads configuration.
+    *   Calls the Fetcher.
+    *   Calls the Parser to get `List[ApartmentDTO]`.
+    *   (Optional) Filters the DTO list using the State Manager.
+    *   Iterates through new `ApartmentDTO` objects.
+    *   Calls the Notifier for each new DTO.
+    *   Includes basic logging.
+
+## Data Flow
+
+```mermaid
+graph LR
+    A[main.py] -- URL --> B(Fetcher);
+    B -- Raw JSON --> A;
+    A -- Raw JSON --> C(Parser);
+    C -- List[ApartmentDTO] --> A;
+    A -- ApartmentDTO.id --> D{State Manager?};
+    D -- Is New? --> A;
+    A -- ApartmentDTO & Config --> E(Notifier);
+    E -- Sends Message --> F((Telegram API));
+    G[config/.env] --> A;
+    G --> E;
+    H[dto.py] --> C;
+    H --> E;
+    H --> A;
+```
+
+## Key Decisions
+
+*   **Language**: Python 3
+*   **Libraries**: `requests` (fetching), `python-telegram-bot` (Telegram), `python-dotenv` (config), `dataclasses` (DTOs - built-in).
+*   **State Management**: Start with a simple JSON file for persistence if implementing duplicate prevention.

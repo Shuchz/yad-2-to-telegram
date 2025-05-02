@@ -1,0 +1,42 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Task List: Yad2 Apartment Notifier
+
+## Phase 1: Planning
+
+*   [x] Define requirements
+*   [x] Analyze Yad2 API request/response
+*   [x] Define DTOs
+*   [x] Outline architecture (`architecture.txt`)
+*   [x] Define project phases (`plans.txt`)
+*   [x] Create task list (`tasks.txt`)
+
+## Phase 2: Core Implementation
+
+*   [x] **Task 2.1:** Setup project structure: Create directories (`src/`), `src/main.py`, `src/fetcher.py`, `src/parser.py`, `src/notifier.py`, `src/config.py`, `src/dto.py`, `src/state.py` (optional), `requirements.txt`, `.gitignore`, `README.md`, `.env.example`.
+*   [x] **Task 2.2:** Implement DTOs (`src/dto.py`): Define `ApartmentDTO`, `AddressDTO` using `dataclasses`. Include `from_api_data` classmethod for parsing raw API item data, with helper functions for safe access and type conversion.
+*   [x] **Task 2.3:** Implement `fetcher.py`: Function to fetch JSON data from the Yad2 URL. Include basic error handling.
+*   [x] **Task 2.4:** Implement `parser.py`: Function that takes raw JSON string, iterates through the listings list, calls `ApartmentDTO.from_api_data()` for each, and returns a `List[ApartmentDTO]`, handling potential list-level errors.
+*   [x] **Task 2.5:** Implement `notifier.py`: Function that accepts an `ApartmentDTO`, formats a message (e.g., using a method on the DTO or internal logic), and sends it via `python-telegram-bot`.
+*   [x] **Task 2.6:** Implement Configuration (`src/config.py`/`.env`): Load Yad2 URL, Telegram Token, Chat ID from environment variables using `python-dotenv`.
+*   [x] **Task 2.7:** Implement `main.py`: Orchestrate fetching, parsing (calling the parser function), and notifying (passing DTOs to notifier). Integrate components. Add basic logging.
+*   [x] **Task 2.8:** Populate `requirements.txt` with `requests`, `python-telegram-bot`, `python-dotenv`.
+*   [x] **Task 2.9:** Create `.env.example` file.
+
+## Phase 3: Feature Enhancement & Refinement
+
+*   [x] **Task 3.1 (Optional):** Implement State Management (`src/state.py`): Functions to load/save sent listing IDs (`ApartmentDTO.id`) to a file (e.g., JSON) and check if a listing is new.
+*   [x] **Task 3.2 (Optional):** Integrate State Management into `main.py` to filter `List[ApartmentDTO]`.
+*   [x] **Task 3.3:** Refine Telegram message format in `notifier.py` for better readability (e.g., Markdown, including image, address formatting).
+*   [x] **Task 3.4:** Add robust error handling (e.g., retries, specific logging).
+*   [x] **Task 3.x:** Implement Price/Neighborhood Filtering in `main.py` and update `dto.py`.
+*   [ ] **Task 3.5:** Add unit/integration tests (e.g., for parser, using pytest).
+
+## Phase 4: Documentation & Finalization
+
+*   [x] **Task 4.1:** Write detailed `README.md`: Project description, setup (dependencies, `.env`), usage, config.
+*   [x] **Task 4.2:** Code cleanup: PEP 8, docstrings, type hinting.
+*   [x] **Task 4.3:** Final review and testing.

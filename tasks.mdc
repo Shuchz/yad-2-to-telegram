@@ -1,0 +1,37 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Task List: Yad2 Apartment Notifier
+
+## Phase 1: Planning
+
+*   [x] Define requirements
+*   [x] Outline architecture (`architecture.mdc`)
+*   [x] Define project phases (`plans.mdc`)
+*   [x] Create task list (`tasks.mdc`)
+
+## Phase 2: Core Implementation
+
+*   [ ] **Task 2.1:** Setup project structure: Create directories (`src/`?), `main.py`, `fetcher.py`, `parser.py`, `notifier.py`, `config.py`, `requirements.txt`, `.gitignore`, `README.md`.
+*   [ ] **Task 2.2:** Implement `fetcher.py`: Function to fetch JSON data from the Yad2 URL. Include basic error handling for network/HTTP errors.
+*   [ ] **Task 2.3:** Implement `parser.py`: Function(s) to parse JSON, extract key fields (price, rooms, size, address, description, image, link). Handle potential `KeyError` or `TypeError`.
+*   [ ] **Task 2.4:** Implement `notifier.py`: Function to send a formatted message to Telegram using `python-telegram-bot`. Define message format.
+*   [ ] **Task 2.5:** Implement Configuration (`config.py`/`.env`): Load Yad2 URL, Telegram Token, Chat ID from environment variables using `python-dotenv`.
+*   [ ] **Task 2.6:** Implement `main.py`: Orchestrate fetching, parsing, and notifying. Integrate components. Add basic logging.
+*   [ ] **Task 2.7:** Populate `requirements.txt` with `requests`, `python-telegram-bot`, `python-dotenv`.
+
+## Phase 3: Feature Enhancement & Refinement
+
+*   [ ] **Task 3.1 (Optional):** Implement State Management (`state.py`): Create functions to load/save sent listing IDs (e.g., to a JSON file) and check if a listing is new.
+*   [ ] **Task 3.2 (Optional):** Integrate State Management into `main.py` to filter out already sent listings.
+*   [ ] **Task 3.3:** Refine Telegram message format for better readability (e.g., using Markdown, including image).
+*   [ ] **Task 3.4:** Add more robust error handling (e.g., retries for fetcher, specific error logging).
+*   [ ] **Task 3.5:** Add unit/integration tests for key components (parser, notifier mock).
+
+## Phase 4: Documentation & Finalization
+
+*   [ ] **Task 4.1:** Write detailed `README.md`: Include project description, setup instructions (dependencies, `.env` file), usage, configuration details.
+*   [ ] **Task 4.2:** Code cleanup: Ensure code follows style guides (e.g., PEP 8), add docstrings.
+*   [ ] **Task 4.3:** Final review and testing.
