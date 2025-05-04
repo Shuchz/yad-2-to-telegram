@@ -252,8 +252,13 @@ async def run_check(is_test_mode: bool = False) -> None:
         # state.save_sent_ids(sent_ids, state_filepath)
         state.save_sent_state(sent_state, state_filepath) # Use new save function
     else:
-        # logger.info("No new apartments were successfully notified, state file not updated.")
-        logger.info("No new apartments were successfully notified, state not updated.") # Updated log
+        logger.info(f"No changes detected in sent state ({len(sent_state)} entries). No save needed unless format migration occurred.")
+
+    # Save the state regardless of changes, as load might have migrated format
+    logger.info(f"Attempting to save state for {len(sent_state)} listings to {state_filepath}")
+    if not state.save_sent_state(sent_state, state_filepath):
+         logger.error("Failed to save the updated state file!")
+    # Removed the old save_sent_ids call
 
     logger.info("Apartment check run finished.")
 
