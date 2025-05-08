@@ -151,11 +151,21 @@ async def send_telegram_notification(token: str, chat_id: str, apartment: Apartm
 
 async def send_telegram_message(bot_token: str, chat_id: str, message: str) -> bool:
     """Send a custom message to a Telegram group."""
-    try:
-        bot = telegram.Bot(token=bot_token)
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-        logger.info(f"Successfully sent message: {message}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send message: {message}. Error: {e}", exc_info=True)
-        return False
+    retry_attempts = 3
+    for attempt in range(retry_attempts):
+        try:
+            bot = telegram.Bot(token=bot_token)
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+            logger.info(f"Successfully sent message: {message}")
+            return True
+        except telegram.error.RetryAfter as e:
+            logger.warning(f"Rate limit hit for message: {message}. Retrying after {e.retry_after} seconds (Attempt {attempt + 1}/{retry_attempts}).")
+            if attempt < retry_attempts - 1:
+                await asyncio.sleep(e.retry_after + 1)  # Wait for the specified time + a small buffer
+            else:
+                logger.error(f"Failed to send message after {retry_attempts} attempts due to rate limiting: {message}")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to send message: {message}. Error: {e}", exc_info=True)
+            return False
+    return False # Should not be reached if logic is correct, but as a fallback
