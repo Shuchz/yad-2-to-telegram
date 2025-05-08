@@ -1,5 +1,8 @@
-import logging
+# Add project root directory to sys.path before any imports
 import sys
+sys.path.insert(0, '/Users/zeev/Desktop/code/yad-2-to-telegram')
+
+import logging
 import time
 import asyncio
 import argparse # Import argparse
@@ -9,12 +12,13 @@ from typing import List, Optional, Set, Dict
 
 # Assuming components are in the src directory relative to the project root
 # REMOVE: from . import config
-from . import fetcher
-from . import listing_parser
-from . import notifier
-from . import state
-from .dto import ApartmentDTO
+from src import fetcher
+from src import listing_parser
+from src import notifier
+from src import state
+from src.dto import ApartmentDTO
 import telegram
+from src.state import update_sent_listings_in_batches
 
 # Basic Logging Configuration
 logging.basicConfig(
@@ -35,10 +39,17 @@ TEST_MODE_NOTIFICATION_LIMIT = 2 # Max notifications in test mode
 # --- Modify run_check to accept test mode flag --- #
 async def run_check(is_test_mode: bool = False) -> None:
     """Performs a single check: fetch, parse, filter, notify, save state (async)."""
+    # Define bot_token and chat_id at the very beginning of the function
+    bot_token = "7684767205:AAE3HVDNwO62Y0fAo-u5bdYPq0gt6L3_awA"
+    chat_id = "-4741762001"
+
     if is_test_mode:
         logger.info("Starting apartment check run in TEST MODE...")
     else:
         logger.info("Starting apartment check run...")
+
+    # Send "Search Initiated" message to Telegram group
+    await notifier.send_telegram_message(bot_token, chat_id, "*Search Initiated*")
 
     # --- State File Setup --- Changed to load state dict ---
     state_filepath = state.get_state_filepath() # Use default filename
@@ -50,8 +61,6 @@ async def run_check(is_test_mode: bool = False) -> None:
     # REMOVED: app_config = config.load_config()
     base_yad2_url = "https://gw.yad2.co.il/realestate-feed/rent/map" # Correct base URL
     # !!! REPLACE THESE WITH YOUR ACTUAL VALUES !!!
-    bot_token = "7684767205:AAE3HVDNwO62Y0fAo-u5bdYPq0gt6L3_awA"
-    chat_id = "-4741762001"
     # !!! END REPLACE SECTION !!!
 
     # Parameters from the specific URL provided
@@ -194,54 +203,60 @@ async def run_check(is_test_mode: bool = False) -> None:
 
     logger.info(f"Attempting to notify for {len(apartments_to_notify)} apartments.")
 
-    # 5. Notify about Listings to Notify
+    # Add a begin message before starting the notification process
+    logger.info("Starting the notification process...")
+
+    # Initialize counters for success and failure
     success_count = 0
     failure_count = 0
-    for apt in apartments_to_notify:
-        sent_successfully = False
-        retry_attempts = 0
-        max_retries = 3 # Limit retries for persistent issues
 
-        while not sent_successfully and retry_attempts < max_retries:
-            try:
-                if await notifier.send_telegram_notification(bot_token, chat_id, apt):
-                    success_count += 1
-                    # sent_ids.add(apt.id)
-                    sent_state[apt.id] = time.time() # Store timestamp when sent
-                    sent_successfully = True # Mark as sent
-                    # logger.debug(f"Notification for {apt.id} successful.")
-                    logger.debug(f"Notification for {apt.id} successful. Added to sent state.") # Updated log
-                    await asyncio.sleep(1) # Proactive delay after successful send
-                else:
-                    # Notifier returned False (e.g., BadRequest, Timeout handled internally)
-                    logger.warning(f"Notifier returned False for apartment {apt.id}. Not retrying.")
-                    failure_count += 1
-                    break # Break while loop, move to next apartment
+    # Add batching logic to send notifications in batches with delays
+    async def send_notifications_in_batches(apartments_to_notify: List[ApartmentDTO], bot_token: str, chat_id: str, batch_size: int = 5, delay_between_batches: int = 10):
+        """Send notifications in batches to avoid hitting rate limits."""
+        nonlocal success_count, failure_count
+        total_apartments = len(apartments_to_notify)
+        for i in range(0, total_apartments, batch_size):
+            batch = apartments_to_notify[i:i + batch_size]
+            logger.info(f"Sending batch {i // batch_size + 1} with {len(batch)} apartments...")
 
-            except telegram.error.RetryAfter as e:
-                retry_attempts += 1
-                wait_time = e.retry_after + 1 # Add 1s buffer
-                logger.warning(f"Rate limit hit for {apt.id} (Attempt {retry_attempts}/{max_retries}). Waiting {wait_time} seconds before retrying...")
-                if retry_attempts < max_retries:
+            for apt in batch:
+                try:
+                    if await notifier.send_telegram_notification(bot_token, chat_id, apt):
+                        logger.debug(f"Notification for {apt.id} successful.")
+                        success_count += 1
+                    else:
+                        logger.warning(f"Notifier returned False for apartment {apt.id}.")
+                        failure_count += 1
+                except telegram.error.RetryAfter as e:
+                    wait_time = e.retry_after + 1
+                    logger.warning(f"Rate limit hit for {apt.id}. Waiting {wait_time} seconds before retrying...")
                     await asyncio.sleep(wait_time)
-                    # Continue while loop to retry
-                else:
-                     logger.error(f"Max retries reached for {apt.id} due to rate limiting. Marking as failed.")
-                     failure_count += 1
-                     # Break while loop (retry_attempts >= max_retries)
+                except Exception as e:
+                    logger.error(f"Unexpected error during notification attempt for {apt.id}: {e}", exc_info=True)
+                    failure_count += 1
 
-            except Exception as e:
-                # Catch any other unexpected exceptions from the notifier or await
-                logger.error(f"Unexpected error during notification attempt for {apt.id}: {e}", exc_info=True)
-                failure_count += 1
-                break # Break while loop, move to next apartment
+            # Update sent listings in batches after each notification batch
+            update_sent_listings_in_batches(sent_state, [{'id': apt.id, 'timestamp': time.time()} for apt in batch])
 
-        if not sent_successfully and retry_attempts >= max_retries:
-             logger.error(f"Permanently failed to send notification for apartment {apt.id} after {max_retries} rate limit retries.")
-        elif not sent_successfully:
-             # Handle cases where notifier returned False or unexpected exception occurred
-             # logger.warning(f"Failed to send notification for new apartment {apt.id} (reason logged above). ID not added to sent list.")
-             logger.warning(f"Failed to send notification for new apartment {apt.id} (reason logged above). ID not added to sent state.") # Updated log
+            if i + batch_size < total_apartments:
+                logger.info(f"Waiting {delay_between_batches} seconds before sending the next batch...")
+                await asyncio.sleep(delay_between_batches)
+
+    # Replace the notification loop with the batching logic
+    # 5. Notify about Listings to Notify
+    if apartments_to_notify:
+        await send_notifications_in_batches(apartments_to_notify, bot_token, chat_id)
+    else:
+        logger.info("No apartments to notify.")
+
+    # Add an end message after completing the notification process
+    logger.info("Notification process completed.")
+
+    # Send "Search Finished" message to Telegram group with the current count
+    current_count = len(sent_state)
+    await notifier.send_telegram_message(bot_token, chat_id, f"*Search Finished* - Current amount saw is {current_count}")
+
+    logger.info("Notification process completed.")
 
     logger.info(f"Notification summary: {success_count} sent, {failure_count} failed.")
 
@@ -274,6 +289,8 @@ if __name__ == "__main__":
         logger.info("Starting Yad2 Apartment Notifier script in TEST MODE.")
     else:
         logger.info("Starting Yad2 Apartment Notifier script.")
+
+    print("sys.path:", sys.path)
 
     # Option 1: Run once using asyncio, passing test flag
     asyncio.run(run_check(is_test_mode=args.test))

@@ -148,3 +148,14 @@ async def send_telegram_notification(token: str, chat_id: str, apartment: Apartm
     except Exception as e:
         logger.error(f"Unexpected error sending Telegram notification for {apartment.id}: {e}", exc_info=True)
         return False
+
+async def send_telegram_message(bot_token: str, chat_id: str, message: str) -> bool:
+    """Send a custom message to a Telegram group."""
+    try:
+        bot = telegram.Bot(token=bot_token)
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        logger.info(f"Successfully sent message: {message}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send message: {message}. Error: {e}", exc_info=True)
+        return False

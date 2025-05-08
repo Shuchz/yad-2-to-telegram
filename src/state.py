@@ -89,19 +89,32 @@ def save_sent_state(sent_state: Dict[str, float], state_filepath: str) -> bool:
 
 def filter_new_listings(listings: List[ApartmentDTO], sent_state: Dict[str, float]) -> List[ApartmentDTO]:
     """
-    Filters a list of ApartmentDTOs, returning only those not already in the sent state.
+    Filters out listings that have already been sent based on the sent_state dictionary.
 
     Args:
-        listings: The list of ApartmentDTOs fetched/parsed.
-        sent_state: The dictionary mapping sent listing IDs to timestamps.
+        listings: A list of ApartmentDTO objects to filter.
+        sent_state: A dictionary where keys are listing IDs and values are timestamps of when they were sent.
 
     Returns:
-        A new list containing only the new/unsent ApartmentDTOs.
+        A list of ApartmentDTO objects that are new (not in sent_state).
     """
-    # Filter based on keys of the dictionary
-    new_listings = [apt for apt in listings if apt.id not in sent_state]
-    if not new_listings:
-        logger.info("No new listings found after filtering against the sent state.")
-    else:
-        logger.info(f"Found {len(new_listings)} new listings out of {len(listings)} total after filtering.")
+    new_listings = []
+    for listing in listings:
+        if listing.id not in sent_state:
+            new_listings.append(listing)
+
     return new_listings
+
+# Add a function to update sent listings in batches
+def update_sent_listings_in_batches(sent_listings: dict, new_listings: list, batch_size: int = 5):
+    """Update sent listings in batches to avoid large writes."""
+    for i in range(0, len(new_listings), batch_size):
+        batch = new_listings[i:i + batch_size]
+        for listing in batch:
+            sent_listings[listing['id']] = listing['timestamp']
+
+        # Save the updated sent listings to the file after each batch
+        with open('sent_listings.json', 'w') as file:
+            json.dump(sent_listings, file, indent=4)
+
+        logger.info(f"Updated sent listings with batch {i // batch_size + 1} containing {len(batch)} listings.")
