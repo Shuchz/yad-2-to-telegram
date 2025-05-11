@@ -3,6 +3,7 @@ import logging
 import os
 import time # Added for timestamping
 from typing import Dict, List, Optional # Changed Set to Dict
+from datetime import datetime # Added for ISO 8601 timestamp conversion
 
 from .dto import ApartmentDTO
 
@@ -22,7 +23,7 @@ def get_state_filepath(filename: Optional[str] = None) -> str:
 def load_sent_state(state_filepath: str) -> Dict[str, float]:
     """
     Loads the state dictionary (listing_id -> timestamp) from the state file.
-    Handles migration from the old list format.
+    Handles migration from the old list format and conversion from ISO strings.
 
     Args:
         state_filepath: The path to the state file (e.g., sent_listings.json).
@@ -40,16 +41,27 @@ def load_sent_state(state_filepath: str) -> Dict[str, float]:
         with open(state_filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
             if isinstance(data, dict):
-                # New format: dictionary {id: timestamp}
-                sent_state = {str(k): float(v) for k, v in data.items()} # Ensure types
+                # New format: dictionary {id: timestamp_str_or_float}
+                for k, v in data.items():
+                    listing_id = str(k)
+                    if isinstance(v, str):
+                        try:
+                            sent_state[listing_id] = datetime.fromisoformat(v).timestamp()
+                        except ValueError:
+                            logger.warning(f"Could not parse ISO date string '{v}' for listing ID '{listing_id}' in {state_filepath}. Skipping this entry.")
+                            # Decide on fallback: e.g., use current time or skip
+                            # sent_state[listing_id] = time.time() # Option: use current time
+                    elif isinstance(v, (int, float)): # Backward compatibility for float timestamps
+                        sent_state[listing_id] = float(v)
+                    else:
+                        logger.warning(f"Invalid timestamp type '{type(v)}' for listing ID '{listing_id}' in {state_filepath}. Skipping.")
                 logger.info(f"Loaded {len(sent_state)} sent listing states (ID -> timestamp) from {state_filepath}")
             elif isinstance(data, list):
                 # Old format: list of IDs. Migrate to new format.
                 current_time = time.time()
                 sent_state = {str(item_id): current_time for item_id in data}
                 logger.warning(f"Detected old state format (list) in {state_filepath}. Migrated {len(sent_state)} IDs to new format (ID -> timestamp) using current time.")
-                # Optionally: Trigger a save immediately after migration?
-                # save_sent_state(sent_state, state_filepath) # Consider this if you want to force update the file format
+                # The save_sent_state will convert these floats to ISO strings on next save.
             else:
                 logger.warning(f"Invalid format in state file {state_filepath}. Expected a dict or list, got {type(data)}. Resetting state.")
     except json.JSONDecodeError:
@@ -62,23 +74,33 @@ def load_sent_state(state_filepath: str) -> Dict[str, float]:
 def save_sent_state(sent_state: Dict[str, float], state_filepath: str) -> bool:
     """
     Saves the current state dictionary (listing_id -> timestamp) to the state file.
+    Timestamps are saved as ISO 8601 formatted strings.
 
     Args:
-        sent_state: The dictionary mapping IDs to timestamps to save.
+        sent_state: The dictionary mapping IDs to float timestamps to save.
         state_filepath: The path to the state file.
 
     Returns:
         True if saving was successful, False otherwise.
     """
     try:
-        # Sort by timestamp for potential readability, though dict order isn't guaranteed in older Python < 3.7
-        # For consistency, maybe sort by ID? Let's sort by ID.
+        # Sort by ID for consistency.
         items_to_save = sorted(sent_state.items())
-        state_to_save_ordered = {k: v for k, v in items_to_save}
+        
+        # Convert float timestamps to ISO 8601 strings
+        state_to_save_ordered_iso: Dict[str, str] = {}
+        for k, v_float in items_to_save:
+            try:
+                state_to_save_ordered_iso[k] = datetime.fromtimestamp(v_float).isoformat()
+            except Exception as e: # Catch potential errors during timestamp conversion
+                logger.error(f"Error converting timestamp {v_float} for key {k} to ISO format: {e}. Skipping this entry in save.")
+                # Optionally, save as original float or a placeholder if critical
+                # state_to_save_ordered_iso[k] = str(v_float) # Fallback to stringified float
+
 
         with open(state_filepath, 'w', encoding='utf-8') as f:
-            json.dump(state_to_save_ordered, f, indent=4)
-        logger.info(f"Successfully saved state for {len(sent_state)} listings to {state_filepath}")
+            json.dump(state_to_save_ordered_iso, f, indent=4)
+        logger.info(f"Successfully saved state for {len(state_to_save_ordered_iso)} listings to {state_filepath} with ISO timestamps.")
         return True
     except IOError as e:
         logger.error(f"Failed to write to state file {state_filepath}: {e}", exc_info=True)
@@ -107,14 +129,15 @@ def filter_new_listings(listings: List[ApartmentDTO], sent_state: Dict[str, floa
 
 # Add a function to update sent listings in batches
 def update_sent_listings_in_batches(sent_listings: dict, new_listings: list, batch_size: int = 5):
-    """Update sent listings in batches to avoid large writes."""
+    """Update sent listings in batches. Timestamps are added as floats."""
     for i in range(0, len(new_listings), batch_size):
         batch = new_listings[i:i + batch_size]
         for listing in batch:
-            sent_listings[listing['id']] = listing['timestamp']
+            # Ensure timestamp is stored as float in memory
+            sent_listings[listing['id']] = float(listing['timestamp']) 
 
-        # Save the updated sent listings to the file after each batch
-        with open('sent_listings.json', 'w') as file:
-            json.dump(sent_listings, file, indent=4)
+        # Removed direct file writing:
+        # with open('sent_listings.json', 'w') as file:
+        #     json.dump(sent_listings, file, indent=4)
 
-        logger.info(f"Updated sent listings with batch {i // batch_size + 1} containing {len(batch)} listings.")
+        logger.info(f"Updated sent_listings in memory with batch {i // batch_size + 1} containing {len(batch)} listings. Timestamps are floats.")

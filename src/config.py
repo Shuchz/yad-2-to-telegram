@@ -21,6 +21,7 @@ ENV_VARS = {
     "MULTI_NEIGHBORHOOD": (str, None),           # Optional comma-separated string of IDs, e.g., "1461,1520" (May be redundant if BBOX_LIST is precise)
     "DEFAULT_ZOOM": (int, 15),                   # Optional zoom level, defaults to 15 based on curl
     # ZOOM is no longer used, bounding boxes define the view
+    "MONGO_URI": (str, "mongodb+srv://apartment-searcher:L4k5S5M4tOXlsDCr@general.avqpi7g.mongodb.net/?retryWrites=true&w=majority&appName=General"), # MongoDB connection URI
 }
 
 def parse_env_var(value: Optional[str], expected_type: Union[type, tuple]) -> Any: # Allow tuple for Union
@@ -103,6 +104,26 @@ def load_config() -> Dict[str, Any]:
     logger.debug(f"Loaded config: {log_config}")
 
     return config
+
+class Config:
+    """Configuration class to store loaded environment variables."""
+    def __init__(self, config_dict: Dict[str, Any]):
+        for key, value in config_dict.items():
+            setattr(self, key, value)
+
+_config_instance = None
+
+def get_config() -> Config:
+    """
+    Returns a singleton instance of the Config class.
+    
+    Returns:
+        Config: Configuration object with loaded environment variables
+    """
+    global _config_instance
+    if _config_instance is None:
+        _config_instance = Config(load_config())
+    return _config_instance
 
 # Example usage:
 # if __name__ == '__main__':

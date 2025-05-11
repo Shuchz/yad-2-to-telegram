@@ -19,6 +19,10 @@ from src import state
 from src.dto import ApartmentDTO
 import telegram
 from src.state import update_sent_listings_in_batches
+# Import mongo_repository for MongoDB integration
+from repositories import mongo_repository
+# Import MongoDB functions for managing seen apartments
+from migrate_sent_listings import is_apartment_seen, add_seen_apartment, get_all_seen_apartment_ids, string_to_numeric_id
 
 # Basic Logging Configuration
 logging.basicConfig(
@@ -50,6 +54,7 @@ async def run_check(is_test_mode: bool = False) -> None:
 
     # Send "Search Initiated" message to Telegram group
     await notifier.send_telegram_message(bot_token, chat_id, "*Search Initiated*")
+    await asyncio.sleep(1) # Add 60-second delay
 
     # --- State File Setup --- Changed to load state dict ---
     state_filepath = state.get_state_filepath() # Use default filename
@@ -179,9 +184,19 @@ async def run_check(is_test_mode: bool = False) -> None:
 
     # No need to check if unique_listings is empty again, handled above
 
-    # 4. Filter New Listings using State --- Use sent_state ---
-    # new_apartments: List[ApartmentDTO] = state.filter_new_listings(unique_listings, sent_ids)
-    new_apartments: List[ApartmentDTO] = state.filter_new_listings(unique_listings, sent_state) # Pass state dict
+    # 4. Retrieve all seen apartment IDs from MongoDB at once
+    seen_apartment_ids = get_all_seen_apartment_ids()
+    logger.info(f"Retrieved {len(seen_apartment_ids)} already seen apartment IDs from MongoDB")
+    
+    # Filter new listings using in-memory comparison (much faster)
+    new_apartments = []
+    for apt in unique_listings:
+        # Convert apartment ID to numeric ID for comparison
+        numeric_id = string_to_numeric_id(apt.id)
+        if numeric_id not in seen_apartment_ids:
+            new_apartments.append(apt)
+    
+    logger.info(f"Found {len(new_apartments)}/{len(unique_listings)} new apartments after filtering against MongoDB seen_apartments collection")
 
     if not new_apartments:
         logger.info("No *new* apartments found to notify.")
@@ -209,11 +224,15 @@ async def run_check(is_test_mode: bool = False) -> None:
     # Initialize counters for success and failure
     success_count = 0
     failure_count = 0
+    mongo_success_count = 0  # Track MongoDB saves
+    
+    # Store successfully notified apartments to batch process later
+    notified_apartment_ids = []
 
     # Add batching logic to send notifications in batches with delays
     async def send_notifications_in_batches(apartments_to_notify: List[ApartmentDTO], bot_token: str, chat_id: str, batch_size: int = 5, delay_between_batches: int = 10):
         """Send notifications in batches to avoid hitting rate limits."""
-        nonlocal success_count, failure_count
+        nonlocal success_count, failure_count, mongo_success_count, notified_apartment_ids
         total_apartments = len(apartments_to_notify)
         for i in range(0, total_apartments, batch_size):
             batch = apartments_to_notify[i:i + batch_size]
@@ -221,9 +240,20 @@ async def run_check(is_test_mode: bool = False) -> None:
 
             for apt in batch:
                 try:
+                    # Save the apartment to MongoDB before sending the notification
+                    try:
+                        mongo_repository.save_apartment(apt)
+                        logger.info(f"Successfully saved apartment {apt.id} to MongoDB.")
+                        mongo_success_count += 1
+                    except Exception as mongo_err:
+                        logger.error(f"Failed to save apartment {apt.id} to MongoDB: {mongo_err}")
+                        # Continue with notification even if MongoDB save fails
+                    
                     if await notifier.send_telegram_notification(bot_token, chat_id, apt):
                         logger.debug(f"Notification for {apt.id} successful.")
                         success_count += 1
+                        # Add to list of successfully notified apartments
+                        notified_apartment_ids.append(apt.id)
                     else:
                         logger.warning(f"Notifier returned False for apartment {apt.id}.")
                         failure_count += 1
@@ -234,9 +264,22 @@ async def run_check(is_test_mode: bool = False) -> None:
                 except Exception as e:
                     logger.error(f"Unexpected error during notification attempt for {apt.id}: {e}", exc_info=True)
                     failure_count += 1
+                await asyncio.sleep(60) # Reduced delay to 10 seconds between notifications
+
+            # Mark all successfully notified apartments as seen in MongoDB
+            batch_success_ids = notified_apartment_ids.copy()
+            notified_apartment_ids = []  # Clear the list for next batch
+            
+            if batch_success_ids:
+                logger.info(f"Marking {len(batch_success_ids)} successfully notified apartments as seen in MongoDB")
+                for apt_id in batch_success_ids:
+                    try:
+                        add_seen_apartment(apt_id)
+                    except Exception as e:
+                        logger.error(f"Failed to mark apartment {apt_id} as seen in MongoDB: {e}")
 
             # Update sent listings in batches after each notification batch
-            update_sent_listings_in_batches(sent_state, [{'id': apt.id, 'timestamp': time.time()} for apt in batch])
+            update_sent_listings_in_batches(sent_state, [{'id': apt_id, 'timestamp': time.time()} for apt_id in batch_success_ids])
 
             if i + batch_size < total_apartments:
                 logger.info(f"Waiting {delay_between_batches} seconds before sending the next batch...")
@@ -254,11 +297,12 @@ async def run_check(is_test_mode: bool = False) -> None:
 
     # Send "Search Finished" message to Telegram group with the current count
     current_count = len(sent_state)
-    await notifier.send_telegram_message(bot_token, chat_id, f"*Search Finished* - Current amount saw is {current_count}")
+    await asyncio.sleep(60) # Add 60-second delay
+    await notifier.send_telegram_message(bot_token, chat_id, f"*Search Finished* - {success_count} new apartments sent in this iteration. Total listings tracked: {current_count}")
 
     logger.info("Notification process completed.")
 
-    logger.info(f"Notification summary: {success_count} sent, {failure_count} failed.")
+    logger.info(f"Notification summary: {success_count} sent, {failure_count} failed, {mongo_success_count} saved to MongoDB.")
 
     # 6. Save Updated State (Always saves state, even in test mode) --- Use sent_state ---
     if len(sent_state) > initial_sent_count:
